@@ -1,0 +1,70 @@
+FROM node:12 AS assets_compiler
+
+# Set working directory
+RUN mkdir -p /app
+RUN mkdir -p /app/public
+
+# Set directory for uncompiled items
+RUN mkdir -p /app/resources/js
+RUN mkdir -p /app/resources/sass
+
+# Copy package compiler
+COPY ./package.json /app
+COPY ./webpack.mix.js /app
+
+# Copy uncompiled files
+COPY ./resources/js /app/resources/js
+COPY ./resources/sass /app/resources/sass
+
+# Open working directory
+WORKDIR /app
+
+RUN mkdir -p /public/js
+RUN mkdir -p /public/css
+
+RUN touch /public/js/app.js
+RUN touch /public/css/app.css
+
+RUN npm install && npm run production
+
+
+
+FROM php:7.2-fpm AS composer_installer
+
+# Copy composer.lock and composer.json
+COPY . /var/www/
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libfreetype6-dev \
+    locales \
+    zip \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
+    unzip \
+    git \
+    curl
+
+# Install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Set working directory
+WORKDIR /var/www
+
+RUN composer install
+
+
+FROM scratch AS export-stage
+
+COPY --from=composer_installer /var/www/vendor vendor
+COPY --from=composer_installer /var/www/composer.lock composer.lock
+
+COPY --from=assets_compiler /app/package-lock.json package-lock.json
+
+COPY --from=assets_compiler /app/public/js/app.js public/js/app.js
+COPY --from=assets_compiler /app/public/js/app.js.LICENSE.txt public/js/app.js.LICENSE.txt
+
+COPY --from=assets_compiler /app/public/css/app.css public/css/app.css
